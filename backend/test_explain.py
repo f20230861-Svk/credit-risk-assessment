@@ -135,7 +135,21 @@ def test_prompt_carries_the_score_and_the_numbers_behind_it():
     assert "Transaction regularity: 25.5 of 30 points" in prompt
     assert "Monthly income: 16.8 of 20 points" in prompt
     assert "Rs 42,000" in prompt
-    assert "already in the best band" in prompt
+    assert "already in the top band, Low Risk (the safest band)" in prompt
+
+
+def test_prompt_names_the_strongest_signal_and_the_biggest_shortfall():
+    prompt = explain.build_prompt(STEADY, scored(STEADY))
+    # Utility payments earned the highest share of their maximum (90%), while
+    # transaction regularity is furthest from its maximum in points (4.5).
+    assert "Strongest signal (highest share of its maximum): Utility bill payments, 22.5 of 25 points (90%)" in prompt
+    assert "Biggest shortfall (most points still available): Transaction regularity, 4.5 points" in prompt
+    assert "Social signal: 7 of 10 points (3 short of the maximum)" in prompt
+
+
+def test_prompt_shortfall_for_the_seasonal_earner():
+    prompt = explain.build_prompt(SEASONAL, scored(SEASONAL))
+    assert "Biggest shortfall (most points still available): Transaction regularity, 13.5 points" in prompt
 
 
 def test_prompt_states_how_far_the_next_band_is():
@@ -148,6 +162,7 @@ def test_prompt_tells_the_ai_not_to_change_the_score_or_decide_the_loan():
     prompt = explain.build_prompt(STEADY, scored(STEADY))
     assert "Do not change, question or recompute it" in prompt
     assert "do not recommend approving or rejecting" in prompt
+    assert "never describe it as high or highest risk" in prompt
 
 
 # ---------- through the API ----------

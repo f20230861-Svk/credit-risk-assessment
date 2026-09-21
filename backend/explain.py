@@ -48,9 +48,25 @@ def next_band(score: float):
 
 def build_prompt(inputs: dict, result: dict) -> str:
     """Builds the request text. It contains numbers only."""
+    rows = []
+    for key, earned in result["breakdown"].items():
+        maximum = round(WEIGHTS[key] * 100, 2)
+        rows.append((key, round(earned, 2), maximum, round(maximum - earned, 2)))
+
     points = "\n".join(
-        f"- {LABELS[key]}: {round(earned, 2):g} of {round(WEIGHTS[key] * 100, 2):g} points"
-        for key, earned in result["breakdown"].items()
+        f"- {LABELS[key]}: {earned:g} of {maximum:g} points ({short:g} short of the maximum)"
+        for key, earned, maximum, short in rows
+    )
+
+    # Decided here, not by the AI, so the wording always matches the numbers
+    # and the page's built-in explanation.
+    strongest = max(rows, key=lambda r: r[1] / r[2])
+    biggest_gap = max(rows, key=lambda r: r[3])
+    highlights = (
+        f"Strongest signal (highest share of its maximum): {LABELS[strongest[0]]}, "
+        f"{strongest[1]:g} of {strongest[2]:g} points ({strongest[1] / strongest[2] * 100:.0f}%)\n"
+        f"Biggest shortfall (most points still available): {LABELS[biggest_gap[0]]}, "
+        f"{biggest_gap[3]:g} points"
     )
 
     values = (
@@ -65,7 +81,7 @@ def build_prompt(inputs: dict, result: dict) -> str:
     if gap:
         gap_line = f"Points needed to reach {gap[1]}: {gap[0]:g}"
     else:
-        gap_line = "The borrower is already in the best band (Low Risk)."
+        gap_line = "The borrower is already in the top band, Low Risk (the safest band). There is no higher band to move into."
 
     return (
         "You are helping a loan officer understand a credit risk score for a "
@@ -77,12 +93,17 @@ def build_prompt(inputs: dict, result: dict) -> str:
         "is High Risk.\n"
         f"{gap_line}\n\n"
         f"Points each signal contributed:\n{points}\n\n"
+        f"{highlights}\n\n"
         f"Values entered for the borrower:\n{values}\n\n"
         "Write a plain-English explanation of 2 to 3 sentences for the loan "
         "officer:\n"
-        "- say which signals helped the most and which held the score back\n"
+        "- say which signal helped the most and which held the score back, "
+        "using the strongest signal and the biggest shortfall exactly as given "
+        "above and no other definition of strongest or weakest\n"
         "- say what would move the borrower to the next band, if there is one\n"
         "- use only the numbers above and do not invent facts about the borrower\n"
+        "- refer to the bands only by their names (Low Risk, Medium Risk, High Risk); "
+        "Low Risk is the safest band, so never describe it as high or highest risk\n"
         "- do not recommend approving or rejecting a loan\n"
         "- no headings, no bullet points, no markdown"
     )

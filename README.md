@@ -43,7 +43,7 @@ flowchart TD
 | AI explanation | LLM (Google Gemini API), optional, with a built-in fallback | `backend/explain.py` |
 | Database | PostgreSQL on Neon | `backend/database.py` |
 | Authentication | Signed JWT tokens (PyJWT) | `backend/main.py` |
-| Tests | pytest, 42 tests | `backend/test_model.py`, `backend/test_auth.py`, `backend/test_explain.py` |
+| Tests | pytest, 44 tests | `backend/test_model.py`, `backend/test_auth.py`, `backend/test_explain.py` |
 
 How a request flows:
 
@@ -142,7 +142,7 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-42 tests cover the scoring model (worked examples, band boundaries, income cap, breakdown adding up to the score), authentication (missing, wrong, expired and forged tokens; wrong passwords; input validation), and the AI explanation (fallback on every failure, key never in the URL, prompt contents, the AI unable to change the score). The tests replace the database and the AI service with stand-ins, so they never touch real data or make real calls.
+44 tests cover the scoring model (worked examples, band boundaries, income cap, breakdown adding up to the score), authentication (missing, wrong, expired and forged tokens; wrong passwords; input validation), and the AI explanation (fallback on every failure, key never in the URL, prompt contents, the AI unable to change the score). The tests replace the database and the AI service with stand-ins, so they never touch real data or make real calls.
 
 ## Deployment
 
