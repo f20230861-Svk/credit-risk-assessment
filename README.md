@@ -105,6 +105,22 @@ Inputs to `/assess-risk`: `txn_regularity`, `utility_payment_score`, `mobile_usa
 - **Encrypted in transit:** the web app and API use HTTPS, and the database connection requires TLS.
 - **Minimal data to the AI service.** Only numbers are sent, never names or identifiers. The API key is sent in a request header, not in a web address, so it never appears in logs. The free tier of the AI service may use prompts to improve the provider's products, which is one more reason to keep the request to anonymous numbers.
 
+## How this maps to the brief
+
+The company's brief lists what a strong prototype may include. This is where each item stands.
+
+| The brief lists | What is built | Status |
+|---|---|---|
+| React JS user interface | Plain HTML, CSS and JavaScript web app | Simplified |
+| Spring Boot or equivalent API service | FastAPI (Python) with generated OpenAPI docs at `/docs` | Equivalent |
+| PostgreSQL for structured data | PostgreSQL on Neon, every assessment saved | Built |
+| pgvector or a vector database, embeddings | Not built. Nothing in this problem needed it. See next steps | Not built |
+| LLM service, prompt templates and guardrails | Gemini API, a prompt template in `explain.py`, guardrails in code | Equivalent |
+| AWS or equivalent deployment | Render for the app and Neon for the database | Equivalent |
+| Authentication, input validation, no hardcoded secrets | Signed tokens, Pydantic validation, environment settings, TLS | Built |
+| Git, README, setup instructions, architecture diagram, tests | GitHub, this README, the diagram above, 44 tests | Built |
+| Responsible AI, explainability and transparency | The AI explains the score and never decides it, and its text is labelled | Built |
+
 ## Run it locally
 
 You need Python 3.9 or newer and a PostgreSQL database. A free Neon database works.
@@ -154,13 +170,14 @@ python -m pytest -q
 ## Limitations and next steps
 
 **Prototype limits**
+- The scorecard measures behaviour, not affordability. A borrower with perfect behaviour and zero income scores 80, which is Low Risk. A production version would add an affordability rule as a separate check.
 - The five signals are entered by hand. A real system would derive them from consented data such as bank and UPI transactions, utility and telecom records.
 - There is one shared demo account, with its password held in an environment variable. A production version would keep hashed passwords in a users table, with roles and a limit on login attempts.
 
 **AI explanation**
 - It depends on a free-tier API with strict rate limits, so under heavy use most explanations would fall back to the built-in one. A production version would use a paid tier, a model approved for the lender, and a data-processing agreement.
 - The AI's wording is checked only for length and presence. A production version would also check that every number it quotes matches the scorecard.
-- Vector search and retrieval are not used. Nothing in this problem needed them, and they would be the next addition once there is a knowledge base, such as lender policy documents.
+- Vector search and retrieval are not used. Nothing in this problem needed them. The natural next addition is embeddings with pgvector to retrieve the lender's policy text, so each reason can cite the rule behind it.
 
 **From scorecard to trained model**
 - Collect labelled repayment outcomes, then train and compare a logistic regression and a gradient-boosted model against this scorecard.
