@@ -1,9 +1,6 @@
 """
 FastAPI server exposing the credit risk model as an API.
-
-Endpoints:
-  GET  /                -> health check
-  POST /assess-risk     -> takes applicant signals, returns risk score
+Logs every assessment to Postgres for audit/history purposes.
 """
 
 from fastapi import FastAPI
@@ -11,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from model import compute_risk_score
+from database import init_db, log_assessment, get_recent_assessments
 
 app = FastAPI(title="Credit Risk Assessment API")
 
@@ -22,12 +20,17 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
+
 class ApplicantData(BaseModel):
-    txn_regularity: float = Field(..., ge=0, le=100, description="0-100 score of transaction consistency")
-    utility_payment_score: float = Field(..., ge=0, le=100, description="0-100, % of bills paid on time")
-    avg_monthly_inflow: float = Field(..., ge=0, description="Average monthly money received, in INR")
-    mobile_usage_stability: float = Field(..., ge=0, le=100, description="0-100 mobile usage consistency")
-    social_signal_score: float = Field(..., ge=0, le=100, description="0-100 digital footprint proxy")
+    txn_regularity: float = Field(..., ge=0, le=100)
+    utility_payment_score: float = Field(..., ge=0, le=100)
+    avg_monthly_inflow: float = Field(..., ge=0)
+    mobile_usage_stability: float = Field(..., ge=0, le=100)
+    social_signal_score: float = Field(..., ge=0, le=100)
 
 
 @app.get("/")
@@ -37,6 +40,7 @@ def health_check():
 
 @app.post("/assess-risk")
 def assess_risk(data: ApplicantData):
+    inputs = data.model_dump()
     result = compute_risk_score(
         txn_regularity=data.txn_regularity,
         utility_payment_score=data.utility_payment_score,
@@ -44,4 +48,10 @@ def assess_risk(data: ApplicantData):
         mobile_usage_stability=data.mobile_usage_stability,
         social_signal_score=data.social_signal_score,
     )
+    log_assessment(inputs, result)
     return result
+
+
+@app.get("/history")
+def history(limit: int = 20):
+    return get_recent_assessments(limit)
