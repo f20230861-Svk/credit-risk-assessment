@@ -350,6 +350,45 @@
 
   .empty { color: var(--ink-soft); padding: 16px 0; }
 
+  [hidden] { display: none !important; }
+
+  /* ---------- sign in ---------- */
+
+  .topbar { display: flex; justify-content: flex-end; }
+
+  .signout {
+    font: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--ink-soft);
+    border-radius: 4px;
+    padding: 6px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+
+  .signout:hover { background: var(--ink); color: #fff; }
+
+  .signin { max-width: 380px; margin-top: 40px; }
+
+  .signin h2 { font-size: 1.5rem; margin-bottom: 8px; }
+
+  .signin .intro { margin: 0 0 20px; color: var(--ink-soft); }
+
+  .signin label { display: block; font-weight: 600; margin-bottom: 4px; }
+
+  .signin input {
+    display: block;
+    width: 100%;
+    font: inherit;
+    color: var(--ink);
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
   /* ---------- small screens ---------- */
 
   @media (max-width: 860px) {
@@ -365,11 +404,29 @@
 </head>
 <body>
 <div class="page">
+  <div class="topbar">
+    <button type="button" class="signout" id="signout-btn" hidden>Sign out</button>
+  </div>
+
   <header>
     <h1>Score a borrower who has no credit file</h1>
     <p class="lede">Enter five signals from everyday financial life. The score shows how much each signal contributed, so the decision can be explained.</p>
   </header>
 
+  <section class="signin" id="signin" aria-labelledby="signin-heading" hidden>
+    <h2 id="signin-heading">Sign in to continue</h2>
+    <p class="intro">Assessments contain applicants' financial details, so the API only answers signed-in users.</p>
+    <form id="signin-form" novalidate>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="submit" id="signin-btn" type="submit">Sign in</button>
+      <p class="status" id="signin-status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <div id="app" hidden>
   <div class="layout">
     <section aria-labelledby="form-heading">
       <h2 id="form-heading" style="font-size:1.5rem;margin-bottom:12px;">Borrower signals</h2>
@@ -400,11 +457,12 @@
       <p class="empty">Loading…</p>
     </div>
   </section>
+  </div>
 </div>
 
 <script>
-  // Change this to your Render URL after the backend is deployed,
-  // for example "https://credit-risk-api.onrender.com" (no trailing slash).
+  // Address of the backend API (no trailing slash).
+  // For local testing use "http://127.0.0.1:8000".
   const API_URL = "https://credit-risk-api-4i8w.onrender.com";
 
   // Points each signal can contribute. These mirror WEIGHTS in backend/model.py.
@@ -608,11 +666,119 @@
       '<p class="reading">' + esc(readingText(data)) + '</p>';
   }
 
+  /* ---------- sign in ---------- */
+
+  const appEl = document.getElementById("app");
+  const signinEl = document.getElementById("signin");
+  const signinForm = document.getElementById("signin-form");
+  const signinBtn = document.getElementById("signin-btn");
+  const signinStatus = document.getElementById("signin-status");
+  const signoutBtn = document.getElementById("signout-btn");
+
+  const TOKEN_KEY = "risk_token";
+  let memoryToken = null;
+
+  function getToken() {
+    if (memoryToken) return memoryToken;
+    try { return sessionStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+  }
+
+  function setToken(token) {
+    memoryToken = token;
+    try { sessionStorage.setItem(TOKEN_KEY, token); } catch (e) { /* storage unavailable */ }
+  }
+
+  function clearToken() {
+    memoryToken = null;
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* storage unavailable */ }
+  }
+
+  function showApp() {
+    signinEl.hidden = true;
+    appEl.hidden = false;
+    signoutBtn.hidden = false;
+  }
+
+  function showSignin(message) {
+    appEl.hidden = true;
+    signinEl.hidden = false;
+    signoutBtn.hidden = true;
+    signinStatus.className = message ? "status error" : "status";
+    signinStatus.textContent = message || "";
+  }
+
+  class SessionEnded extends Error {}
+
+  // Calls the API with the saved token. A 401 sends the person back to sign in.
+  async function authFetch(path, options) {
+    const opts = options || {};
+    opts.headers = Object.assign({}, opts.headers, { Authorization: "Bearer " + getToken() });
+    const res = await fetch(API_URL + path, opts);
+    if (res.status === 401) {
+      clearToken();
+      showSignin("Your session has ended. Sign in again.");
+      throw new SessionEnded("signed out");
+    }
+    return res;
+  }
+
+  signinForm.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+
+    if (!username || !password) {
+      signinStatus.className = "status error";
+      signinStatus.textContent = "Enter both a username and a password.";
+      return;
+    }
+
+    signinBtn.disabled = true;
+    signinBtn.textContent = "Signing in\u2026";
+    signinStatus.className = "status";
+    signinStatus.textContent = "";
+    const slow = setTimeout(function () {
+      signinStatus.textContent = "Still waiting. A free-tier server can take up to a minute to wake up.";
+    }, 4000);
+
+    try {
+      const res = await fetch(API_URL + "/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username, password: password })
+      });
+
+      if (res.status === 401) throw new Error("Incorrect username or password.");
+      if (res.status === 503) throw new Error("Sign-in is not set up on the server yet.");
+      if (!res.ok) throw new Error("The server answered with status " + res.status + ".");
+
+      const data = await res.json();
+      setToken(data.access_token);
+      document.getElementById("password").value = "";
+      showApp();
+      loadHistory();
+    } catch (err) {
+      signinStatus.className = "status error";
+      signinStatus.textContent = (err instanceof TypeError)
+        ? "Could not reach the server. Check your connection, then try again."
+        : err.message;
+    } finally {
+      clearTimeout(slow);
+      signinBtn.disabled = false;
+      signinBtn.textContent = "Sign in";
+    }
+  });
+
+  signoutBtn.addEventListener("click", function () {
+    clearToken();
+    location.reload();
+  });
+
   /* ---------- history ---------- */
 
   async function loadHistory() {
     try {
-      const res = await fetch(API_URL + "/history?limit=10");
+      const res = await authFetch("/history?limit=10");
       if (!res.ok) throw new Error("status " + res.status);
       const rows = await res.json();
 
@@ -636,6 +802,7 @@
           '<tbody>' + body + '</tbody>' +
         '</table>';
     } catch (err) {
+      if (err instanceof SessionEnded) return;
       historyEl.innerHTML = '<p class="empty">Could not load history. Check that the backend is running.</p>';
     }
   }
@@ -663,7 +830,7 @@
     setBusy(true);
 
     try {
-      const res = await fetch(API_URL + "/assess-risk", {
+      const res = await authFetch("/assess-risk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -674,14 +841,23 @@
       statusEl.textContent = "";
       loadHistory();
     } catch (err) {
-      statusEl.className = "status error";
-      statusEl.textContent = "Could not get a score from " + API_URL + ". Check that the backend is running, then try again.";
+      if (err instanceof SessionEnded) {
+        statusEl.textContent = "";
+      } else {
+        statusEl.className = "status error";
+        statusEl.textContent = "Could not get a score from " + API_URL + ". Check that the backend is running, then try again.";
+      }
     } finally {
       setBusy(false);
     }
   });
 
-  loadHistory();
+  if (getToken()) {
+    showApp();
+    loadHistory();
+  } else {
+    showSignin("");
+  }
 </script>
 </body>
 </html>
