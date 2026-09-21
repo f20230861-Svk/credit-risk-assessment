@@ -298,6 +298,13 @@
     transition: width 0.5s ease;
   }
 
+  .source-note {
+    margin: 8px 0 0;
+    font-size: 0.85rem;
+    color: var(--on-navy-soft);
+    max-width: 52ch;
+  }
+
   .reading {
     margin: 20px 0 0;
     padding-top: 16px;
@@ -663,7 +670,18 @@
       '</div>' +
       '<h2 class="breakdown-title">How the score adds up</h2>' +
       '<ul class="rows">' + rowsHtml + '</ul>' +
-      '<p class="reading">' + esc(readingText(data)) + '</p>';
+      explanationHtml(data);
+  }
+
+  // The server adds ai_explanation when the AI layer is on and answered in time.
+  // Otherwise the page falls back to its own explanation built from the numbers.
+  function explanationHtml(data) {
+    if (data.ai_explanation) {
+      return '<p class="reading">' + esc(data.ai_explanation) + '</p>' +
+        '<p class="source-note">Written by an AI from the numbers above. ' +
+        'The score itself comes from the scorecard.</p>';
+    }
+    return '<p class="reading">' + esc(readingText(data)) + '</p>';
   }
 
   /* ---------- sign in ---------- */

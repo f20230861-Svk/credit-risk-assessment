@@ -11,8 +11,11 @@ Secrets are read from environment variables and never written in the code:
   JWT_SECRET                    key used to sign tokens (long and random)
   ALLOWED_ORIGINS               optional, comma-separated list of websites
                                 allowed to call this API (default: any)
+  GEMINI_API_KEY, GEMINI_MODEL  optional, turn on the AI-written explanation
+                                (see explain.py)
 """
 
+import copy
 import hmac
 import os
 import time
@@ -25,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from model import compute_risk_score
 from database import init_db, log_assessment, get_recent_assessments
+from explain import generate_explanation
 
 TOKEN_LIFETIME_SECONDS = 12 * 60 * 60  # a signed-in session lasts 12 hours
 
@@ -147,6 +151,11 @@ def assess_risk(data: ApplicantData, user: str = Depends(require_user)):
         social_signal_score=data.social_signal_score,
     )
     log_assessment(inputs, result)
+
+    # The score above is final. The AI explanation is an optional extra: it is
+    # None when the AI is off or unavailable, and the app then shows its
+    # built-in explanation instead.
+    result["ai_explanation"] = generate_explanation(inputs, copy.deepcopy(result))
     return result
 
 
