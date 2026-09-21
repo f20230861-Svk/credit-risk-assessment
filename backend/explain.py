@@ -29,11 +29,14 @@ TIMEOUT_SECONDS = 8
 MAX_CHARS = 700
 
 LABELS = {
-    "txn_regularity": "Transaction regularity",
-    "utility_payment_score": "Utility bill payments",
-    "income_score": "Monthly income",
-    "mobile_usage_stability": "Mobile usage stability",
-    "social_signal_score": "Social signal",
+    "debt_burden": "Debt burden",
+    "income_stability": "Income stability",
+    "bills_on_time": "Bills paid on time",
+    "failed_payments": "Failed payments",
+    "savings_cushion": "Savings cushion",
+    "income_level": "Income level",
+    "assets": "Assets",
+    "time_in_work": "Time in work",
 }
 
 
@@ -46,7 +49,7 @@ def next_band(score: float):
     return None
 
 
-def build_prompt(inputs: dict, result: dict) -> str:
+def build_prompt(result: dict) -> str:
     """Builds the request text. It contains numbers only."""
     rows = []
     for key, earned in result["breakdown"].items():
@@ -58,30 +61,34 @@ def build_prompt(inputs: dict, result: dict) -> str:
         for key, earned, maximum, short in rows
     )
 
+    facts = "\n".join(f"- {LABELS[key]}: {text}" for key, text in result["details"].items())
+
     # Decided here, not by the AI, so the wording always matches the numbers
     # and the page's built-in explanation.
     strongest = max(rows, key=lambda r: r[1] / r[2])
     biggest_gap = max(rows, key=lambda r: r[3])
     highlights = (
-        f"Strongest signal (highest share of its maximum): {LABELS[strongest[0]]}, "
+        f"Strongest factor (highest share of its maximum): {LABELS[strongest[0]]}, "
         f"{strongest[1]:g} of {strongest[2]:g} points ({strongest[1] / strongest[2] * 100:.0f}%)\n"
         f"Biggest shortfall (most points still available): {LABELS[biggest_gap[0]]}, "
         f"{biggest_gap[3]:g} points"
     )
 
-    values = (
-        f"- Transaction regularity: {inputs['txn_regularity']:g} out of 100\n"
-        f"- Utility bill payments: {inputs['utility_payment_score']:g} out of 100\n"
-        f"- Average monthly income: Rs {inputs['avg_monthly_inflow']:,.0f}\n"
-        f"- Mobile usage stability: {inputs['mobile_usage_stability']:g} out of 100\n"
-        f"- Social signal: {inputs['social_signal_score']:g} out of 100"
-    )
-
-    gap = next_band(result["final_score"])
-    if gap:
-        gap_line = f"Points needed to reach {gap[1]}: {gap[0]:g}"
+    overrides = result.get("overrides") or []
+    if overrides:
+        band_line = (
+            f"A policy rule applies: {'; '.join(overrides)}. "
+            "It sets the band to High Risk whatever the score is, so say this plainly."
+        )
     else:
-        gap_line = "The borrower is already in the top band, Low Risk (the safest band). There is no higher band to move into."
+        gap = next_band(result["final_score"])
+        if gap:
+            band_line = f"Points needed to reach {gap[1]}: {gap[0]:g}"
+        else:
+            band_line = (
+                "The borrower is already in the top band, Low Risk (the safest band). "
+                "There is no higher band to move into."
+            )
 
     return (
         "You are helping a loan officer understand a credit risk score for a "
@@ -91,14 +98,14 @@ def build_prompt(inputs: dict, result: dict) -> str:
         f"Score: {result['final_score']:g} out of 100 ({result['risk_band']}).\n"
         "Bands: 70 or more is Low Risk, 40 up to 70 is Medium Risk, below 40 "
         "is High Risk.\n"
-        f"{gap_line}\n\n"
-        f"Points each signal contributed:\n{points}\n\n"
+        f"{band_line}\n\n"
+        f"Points each factor contributed:\n{points}\n\n"
         f"{highlights}\n\n"
-        f"Values entered for the borrower:\n{values}\n\n"
+        f"Facts behind each factor:\n{facts}\n\n"
         "Write a plain-English explanation of 2 to 3 sentences for the loan "
         "officer:\n"
-        "- say which signal helped the most and which held the score back, "
-        "using the strongest signal and the biggest shortfall exactly as given "
+        "- say which factor helped the most and which held the score back, "
+        "using the strongest factor and the biggest shortfall exactly as given "
         "above and no other definition of strongest or weakest\n"
         "- say what would move the borrower to the next band, if there is one\n"
         "- use only the numbers above and do not invent facts about the borrower\n"
@@ -109,7 +116,7 @@ def build_prompt(inputs: dict, result: dict) -> str:
     )
 
 
-def generate_explanation(inputs: dict, result: dict):
+def generate_explanation(result: dict):
     """Returns a short explanation, or None if the AI is unavailable."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -117,7 +124,7 @@ def generate_explanation(inputs: dict, result: dict):
 
     model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
     body = {
-        "contents": [{"parts": [{"text": build_prompt(inputs, result)}]}],
+        "contents": [{"parts": [{"text": build_prompt(result)}]}],
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024},
     }
 

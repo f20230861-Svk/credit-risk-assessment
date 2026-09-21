@@ -101,6 +101,25 @@
 
   .presets button:hover { background: var(--ink); color: #fff; }
 
+  .group-title {
+    font-family: var(--serif);
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 28px 0 0;
+    color: var(--ink);
+  }
+
+  .group-title:first-of-type { margin-top: 8px; }
+
+  .num-wrap select {
+    font: inherit;
+    color: var(--ink);
+    padding: 6px 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
   .field {
     padding: 18px 0;
     border-top: 1px solid var(--line);
@@ -277,6 +296,20 @@
     border-top: 1px solid rgba(255,255,255,0.14);
   }
 
+  .detail {
+    grid-column: 1 / -1;
+    font-size: 0.88rem;
+    color: var(--on-navy-soft);
+  }
+
+  .policy {
+    margin: 20px 0 0;
+    padding: 12px 14px;
+    border: 1px solid var(--med);
+    border-radius: 6px;
+    font-size: 0.95rem;
+  }
+
   .row-points {
     font-variant-numeric: normal;
     color: var(--on-navy-soft);
@@ -417,7 +450,7 @@
 
   <header>
     <h1>Score a borrower who has no credit file</h1>
-    <p class="lede">Enter five signals from everyday financial life. The score shows how much each signal contributed, so the decision can be explained.</p>
+    <p class="lede">Enter nine facts about the borrower's income, loans and payment record. The score shows how much each factor contributed, so the decision can be explained.</p>
   </header>
 
   <section class="signin" id="signin" aria-labelledby="signin-heading" hidden>
@@ -436,13 +469,14 @@
   <div id="app" hidden>
   <div class="layout">
     <section aria-labelledby="form-heading">
-      <h2 id="form-heading" style="font-size:1.5rem;margin-bottom:12px;">Borrower signals</h2>
+      <h2 id="form-heading" style="font-size:1.5rem;margin-bottom:12px;">Borrower facts</h2>
 
       <div class="presets">
         <span>Try an example:</span>
         <button type="button" data-preset="steady">Steady earner</button>
         <button type="button" data-preset="seasonal">Seasonal earner</button>
         <button type="button" data-preset="irregular">Irregular earner</button>
+        <button type="button" data-preset="noincome">No income, clean record</button>
       </div>
 
       <form id="assess-form" novalidate>
@@ -453,7 +487,7 @@
     </section>
 
     <section class="result" id="result" aria-live="polite" aria-label="Assessment result">
-      <p class="placeholder">Enter the five signals and choose Assess risk. The score, its risk band and each signal's contribution will appear here.</p>
+      <p class="placeholder">Enter the borrower's facts and choose Assess risk. The score, its risk band and each factor's contribution will appear here.</p>
     </section>
   </div>
 
@@ -472,40 +506,60 @@
   // For local testing use "http://127.0.0.1:8000".
   const API_URL = "https://credit-risk-api-4i8w.onrender.com";
 
-  // Points each signal can contribute. These mirror WEIGHTS in backend/model.py.
+  // Points each factor can contribute. These mirror WEIGHTS in backend/model.py.
   const MAX_POINTS = {
-    txn_regularity: 30,
-    utility_payment_score: 25,
-    income_score: 20,
-    mobile_usage_stability: 15,
-    social_signal_score: 10
+    debt_burden: 20,
+    income_stability: 20,
+    bills_on_time: 20,
+    failed_payments: 10,
+    savings_cushion: 10,
+    income_level: 10,
+    assets: 5,
+    time_in_work: 5
   };
 
   const LABELS = {
-    txn_regularity: "Transaction regularity",
-    utility_payment_score: "Utility bill payments",
-    income_score: "Monthly income",
-    mobile_usage_stability: "Mobile usage stability",
-    social_signal_score: "Social signal"
+    debt_burden: "Debt burden",
+    income_stability: "Income stability",
+    bills_on_time: "Bills paid on time",
+    failed_payments: "Failed payments",
+    savings_cushion: "Savings cushion",
+    income_level: "Income level",
+    assets: "Assets",
+    time_in_work: "Time in work"
   };
 
+  // type: "money" (rupees), "count" (whole number with a slider) or "select"
   const FIELDS = [
-    { key: "txn_regularity", label: LABELS.txn_regularity, type: "score", value: 70,
-      hint: "How steadily money moves through the account. 0 is erratic, 100 is very steady." },
-    { key: "utility_payment_score", label: LABELS.utility_payment_score, type: "score", value: 70,
-      hint: "How reliably electricity, water, gas and phone bills are paid on time." },
-    { key: "avg_monthly_inflow", label: "Average monthly income", type: "money", value: 25000,
-      hint: "Money received per month, in rupees. \u20B950,000 or more earns full income points." },
-    { key: "mobile_usage_stability", label: LABELS.mobile_usage_stability, type: "score", value: 70,
-      hint: "How consistent recharge and usage patterns are over time." },
-    { key: "social_signal_score", label: LABELS.social_signal_score, type: "score", value: 70,
-      hint: "Score from community and network signals, 0 to 100." }
+    { group: "Income and loans", key: "monthly_income", label: "Average monthly income", type: "money", value: 30000,
+      hint: "Money received per month, averaged over the last 6 months, in rupees. \u20B950,000 or more earns full income points." },
+    { key: "lowest_month_income", label: "Lowest month's income", type: "money", value: 20000,
+      hint: "The lowest month's income in the same 6 months. It shows how much income dips." },
+    { key: "existing_emi", label: "Existing loan installments", type: "money", value: 0,
+      hint: "Total monthly installments on loans the borrower already has, in rupees. Enter 0 if none." },
+    { key: "requested_emi", label: "New loan installment", type: "money", value: 5000,
+      hint: "Monthly installment of the loan being requested, in rupees." },
+
+    { group: "Payment record", key: "bills_on_time", label: "Bills paid on time", type: "count", min: 0, max: 12, value: 10,
+      hint: "Utility, rent and phone bills paid on or before the due date, out of the last 12." },
+    { key: "failed_payments", label: "Failed payments", type: "count", min: 0, max: 50, sliderMax: 12, value: 0,
+      hint: "Bounced or failed automatic payments in the last 6 months." },
+
+    { group: "Cushion and stability", key: "avg_balance", label: "Average month-end balance", type: "money", value: 30000,
+      hint: "Average account balance at month end over the last 6 months, in rupees. Three months of income earns full points." },
+    { key: "months_in_work", label: "Months in current work", type: "count", min: 0, max: 600, sliderMax: 60, value: 18,
+      hint: "Months with the same employer or platform. 24 or more earns full points." },
+
+    { group: "Assets", key: "vehicle", label: "Vehicle owned", type: "select", value: "none",
+      options: [["none", "None"], ["cycle", "Cycle"], ["two_wheeler", "Bike or scooter"], ["second_hand_car", "Second-hand car"], ["car", "Car"]],
+      hint: "The most valuable vehicle owned. If it is still being paid off, count that loan under existing installments." }
   ];
 
   const PRESETS = {
-    steady:    { txn_regularity: 85, utility_payment_score: 90, avg_monthly_inflow: 42000, mobile_usage_stability: 80, social_signal_score: 70 },
-    seasonal:  { txn_regularity: 55, utility_payment_score: 60, avg_monthly_inflow: 22000, mobile_usage_stability: 60, social_signal_score: 50 },
-    irregular: { txn_regularity: 30, utility_payment_score: 35, avg_monthly_inflow: 9000,  mobile_usage_stability: 40, social_signal_score: 30 }
+    steady:    { monthly_income: 42000, lowest_month_income: 38000, existing_emi: 3000, requested_emi: 4000, bills_on_time: 12, failed_payments: 0, avg_balance: 60000, vehicle: "two_wheeler", months_in_work: 36 },
+    seasonal:  { monthly_income: 22000, lowest_month_income: 9000,  existing_emi: 2000, requested_emi: 4000, bills_on_time: 9,  failed_payments: 1, avg_balance: 15000, vehicle: "cycle",       months_in_work: 18 },
+    irregular: { monthly_income: 12000, lowest_month_income: 3000,  existing_emi: 3000, requested_emi: 5000, bills_on_time: 4,  failed_payments: 3, avg_balance: 2000,  vehicle: "none",        months_in_work: 5 },
+    noincome:  { monthly_income: 0,     lowest_month_income: 0,     existing_emi: 0,    requested_emi: 5000, bills_on_time: 12, failed_payments: 0, avg_balance: 20000, vehicle: "car",         months_in_work: 30 }
   };
 
   const fieldsEl = document.getElementById("fields");
@@ -519,22 +573,42 @@
 
   FIELDS.forEach(function (f) {
     const id = "in-" + f.key;
+
+    if (f.group) {
+      const title = document.createElement("h3");
+      title.className = "group-title";
+      title.textContent = f.group;
+      fieldsEl.appendChild(title);
+    }
+
     const wrap = document.createElement("div");
     wrap.className = "field";
 
-    const isScore = f.type === "score";
-    const numAttrs = isScore ? 'min="0" max="100" step="1"' : 'min="0" step="500"';
+    let control;
+    if (f.type === "select") {
+      control = '<select id="' + id + '" name="' + f.key + '" aria-describedby="' + id + '-hint">' +
+        f.options.map(function (o) {
+          return '<option value="' + o[0] + '"' + (o[0] === f.value ? " selected" : "") + ">" + o[1] + "</option>";
+        }).join("") + "</select>";
+    } else if (f.type === "money") {
+      control = '<span aria-hidden="true">\u20B9</span><input id="' + id + '" class="money" name="' + f.key +
+        '" type="number" inputmode="decimal" min="0" step="500" value="' + f.value + '" aria-describedby="' + id + '-hint">';
+    } else {
+      control = '<input id="' + id + '" name="' + f.key + '" type="number" inputmode="numeric" min="' + f.min +
+        '" max="' + f.max + '" step="1" value="' + f.value + '" aria-describedby="' + id + '-hint">';
+    }
+
+    const slider = f.type === "count"
+      ? '<input class="slider" type="range" min="' + f.min + '" max="' + (f.sliderMax || f.max) + '" step="1" value="' + f.value +
+        '" data-for="' + id + '" aria-label="' + f.label + ' slider">'
+      : "";
 
     wrap.innerHTML =
       '<div class="field-head">' +
         '<label for="' + id + '">' + f.label + '</label>' +
-        '<span class="num-wrap">' + (isScore ? '' : '<span aria-hidden="true">\u20B9</span>') +
-          '<input id="' + id + '" class="' + (isScore ? '' : 'money') + '" name="' + f.key + '" type="number" inputmode="decimal" ' +
-          numAttrs + ' value="' + f.value + '" aria-describedby="' + id + '-hint"></span>' +
+        '<span class="num-wrap">' + control + '</span>' +
       '</div>' +
-      '<p class="hint" id="' + id + '-hint">' + f.hint + '</p>' +
-      (isScore ? '<input class="slider" type="range" min="0" max="100" step="1" value="' + f.value +
-        '" data-for="' + id + '" aria-label="' + f.label + ' slider">' : '');
+      '<p class="hint" id="' + id + '-hint">' + f.hint + '</p>' + slider;
 
     fieldsEl.appendChild(wrap);
   });
@@ -559,16 +633,28 @@
     });
   }
 
+  // Reads the form. Returns null (and says why) if the numbers cannot be right.
   function readInputs() {
     const out = {};
     FIELDS.forEach(function (f) {
       const el = document.getElementById("in-" + f.key);
+      if (f.type === "select") {
+        out[f.key] = el.value;
+        return;
+      }
       let v = parseFloat(el.value);
       if (Number.isNaN(v)) v = 0;
-      v = f.type === "score" ? Math.min(100, Math.max(0, v)) : Math.max(0, v);
+      if (f.type === "count") v = Math.min(f.max, Math.max(f.min, Math.round(v)));
+      else v = Math.max(0, v);
       out[f.key] = v;
     });
     setInputs(out); // show exactly what is being sent
+
+    if (out.lowest_month_income > out.monthly_income) {
+      statusEl.className = "status error";
+      statusEl.textContent = "The lowest month's income cannot be higher than the average month's income.";
+      return null;
+    }
     return out;
   }
 
@@ -618,8 +704,13 @@
     })[0];
     const mostRoom = rows.slice().sort(function (a, b) { return b.gap - a.gap; })[0];
 
-    let text = "Strongest signal: " + LABELS[strongest.k] + ", " + fmt(strongest.earned) +
+    let text = "Strongest factor: " + LABELS[strongest.k] + ", " + fmt(strongest.earned) +
       " of " + strongest.max + " points. ";
+
+    if (data.overrides && data.overrides.length) {
+      return text + "A policy rule applies: " + data.overrides.join("; ") +
+        ". It sets the band to High Risk whatever the score is.";
+    }
 
     const score = data.final_score;
     let next = null;
@@ -644,9 +735,11 @@
     const rowsHtml = Object.keys(MAX_POINTS).map(function (k) {
       const earned = data.breakdown[k];
       const pct = Math.min(100, Math.max(0, (earned / MAX_POINTS[k]) * 100));
+      const detail = data.details && data.details[k] ? '<span class="detail">' + esc(data.details[k]) + '</span>' : '';
       return '<li class="row">' +
         '<span>' + LABELS[k] + '</span>' +
         '<span class="row-points">' + fmt(earned) + ' of ' + MAX_POINTS[k] + '</span>' +
+        detail +
         '<span class="bar"><i style="width:' + pct + '%"></i></span>' +
       '</li>';
     }).join("");
@@ -657,6 +750,7 @@
         '<span class="outof">out of 100</span>' +
         '<span class="band ' + cls + '">' + esc(data.risk_band) + '</span>' +
       '</div>' +
+      policyHtml(data) +
       '<div class="meter-wrap" role="img" aria-label="Score ' + fmt(score) +
         ' on a scale of 0 to 100. High risk below 40, medium risk 40 to 70, low risk 70 and above.">' +
         '<div class="zones">' +
@@ -671,6 +765,12 @@
       '<h2 class="breakdown-title">How the score adds up</h2>' +
       '<ul class="rows">' + rowsHtml + '</ul>' +
       explanationHtml(data);
+  }
+
+  function policyHtml(data) {
+    if (!data.overrides || !data.overrides.length) return "";
+    return '<p class="policy"><b>Policy rule applied:</b> ' + esc(data.overrides.join("; ")) +
+      '. The band is High Risk whatever the score is.</p>';
   }
 
   // The server adds ai_explanation when the AI layer is on and answered in time.
@@ -726,6 +826,7 @@
   }
 
   class SessionEnded extends Error {}
+  class InputError extends Error {}
 
   // Calls the API with the saved token. A 401 sends the person back to sign in.
   async function authFetch(path, options) {
@@ -810,7 +911,7 @@
           '<td>' + esc(fmtTime(r.created_at)) + '</td>' +
           '<td class="num">' + fmt(r.final_score) + '</td>' +
           '<td><span class="pill ' + bandClass(r.risk_band) + '">' + esc(r.risk_band) + '</span></td>' +
-          '<td class="num">\u20B9' + Number(r.avg_monthly_inflow).toLocaleString("en-IN") + '</td>' +
+          '<td class="num">\u20B9' + Number(r.inputs.monthly_income).toLocaleString("en-IN") + '</td>' +
         '</tr>';
       }).join("");
 
@@ -845,6 +946,7 @@
   formEl.addEventListener("submit", async function (e) {
     e.preventDefault();
     const payload = readInputs();
+    if (!payload) return;
     setBusy(true);
 
     try {
@@ -853,6 +955,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
+      if (res.status === 422) throw new InputError("The server did not accept these numbers. Check them and try again.");
       if (!res.ok) throw new Error("The server answered with status " + res.status + ".");
       const data = await res.json();
       renderResult(data);
@@ -861,6 +964,9 @@
     } catch (err) {
       if (err instanceof SessionEnded) {
         statusEl.textContent = "";
+      } else if (err instanceof InputError) {
+        statusEl.className = "status error";
+        statusEl.textContent = err.message;
       } else {
         statusEl.className = "status error";
         statusEl.textContent = "Could not get a score from " + API_URL + ". Check that the backend is running, then try again.";

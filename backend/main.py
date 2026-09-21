@@ -19,12 +19,13 @@ import copy
 import hmac
 import os
 import time
+from typing import Literal
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from model import compute_risk_score
 from database import init_db, log_assessment, get_recent_assessments
@@ -55,12 +56,27 @@ def on_startup():
     init_db()
 
 
+Vehicle = Literal["none", "cycle", "two_wheeler", "second_hand_car", "car"]
+
+
 class ApplicantData(BaseModel):
-    txn_regularity: float = Field(..., ge=0, le=100)
-    utility_payment_score: float = Field(..., ge=0, le=100)
-    avg_monthly_inflow: float = Field(..., ge=0)
-    mobile_usage_stability: float = Field(..., ge=0, le=100)
-    social_signal_score: float = Field(..., ge=0, le=100)
+    """The nine facts about a borrower. Money is in rupees."""
+
+    monthly_income: float = Field(..., ge=0, le=10_000_000)
+    lowest_month_income: float = Field(..., ge=0, le=10_000_000)
+    existing_emi: float = Field(..., ge=0, le=10_000_000)
+    requested_emi: float = Field(..., ge=0, le=10_000_000)
+    bills_on_time: int = Field(..., ge=0, le=12)
+    failed_payments: int = Field(..., ge=0, le=50)
+    avg_balance: float = Field(..., ge=0, le=100_000_000)
+    vehicle: Vehicle
+    months_in_work: int = Field(..., ge=0, le=600)
+
+    @model_validator(mode="after")
+    def lowest_month_cannot_beat_the_average(self):
+        if self.lowest_month_income > self.monthly_income:
+            raise ValueError("lowest_month_income cannot be higher than monthly_income")
+        return self
 
 
 class LoginRequest(BaseModel):
@@ -143,19 +159,13 @@ def health_check():
 @app.post("/assess-risk")
 def assess_risk(data: ApplicantData, user: str = Depends(require_user)):
     inputs = data.model_dump()
-    result = compute_risk_score(
-        txn_regularity=data.txn_regularity,
-        utility_payment_score=data.utility_payment_score,
-        avg_monthly_inflow=data.avg_monthly_inflow,
-        mobile_usage_stability=data.mobile_usage_stability,
-        social_signal_score=data.social_signal_score,
-    )
+    result = compute_risk_score(**inputs)
     log_assessment(inputs, result)
 
     # The score above is final. The AI explanation is an optional extra: it is
     # None when the AI is off or unavailable, and the app then shows its
     # built-in explanation instead.
-    result["ai_explanation"] = generate_explanation(inputs, copy.deepcopy(result))
+    result["ai_explanation"] = generate_explanation(copy.deepcopy(result))
     return result
 
 

@@ -1,11 +1,15 @@
 """
 Database connection and logging for credit risk assessments.
 Every call to /assess-risk is logged to Postgres as an audit trail.
+
+The table is called assessments_v2 and keeps the inputs as one JSON document,
+so the scorecard can gain or lose inputs without changing the table again.
 """
 
 import os
+
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,19 +22,16 @@ def get_connection():
 
 
 def init_db():
-    """Creates the assessments table if it doesn't already exist."""
+    """Creates the assessments_v2 table if it doesn't already exist."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS assessments (
+        CREATE TABLE IF NOT EXISTS assessments_v2 (
             id SERIAL PRIMARY KEY,
-            txn_regularity FLOAT,
-            utility_payment_score FLOAT,
-            avg_monthly_inflow FLOAT,
-            mobile_usage_stability FLOAT,
-            social_signal_score FLOAT,
-            final_score FLOAT,
-            risk_band TEXT,
+            inputs JSONB NOT NULL,
+            final_score FLOAT NOT NULL,
+            risk_band TEXT NOT NULL,
+            overrides JSONB NOT NULL DEFAULT '[]',
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
@@ -44,19 +45,13 @@ def log_assessment(inputs: dict, result: dict):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO assessments (
-            txn_regularity, utility_payment_score, avg_monthly_inflow,
-            mobile_usage_stability, social_signal_score,
-            final_score, risk_band
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO assessments_v2 (inputs, final_score, risk_band, overrides)
+        VALUES (%s, %s, %s, %s)
     """, (
-        inputs["txn_regularity"],
-        inputs["utility_payment_score"],
-        inputs["avg_monthly_inflow"],
-        inputs["mobile_usage_stability"],
-        inputs["social_signal_score"],
+        Json(inputs),
         result["final_score"],
         result["risk_band"],
+        Json(result["overrides"]),
     ))
     conn.commit()
     cur.close()
@@ -68,7 +63,8 @@ def get_recent_assessments(limit: int = 20):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT * FROM assessments
+        SELECT id, inputs, final_score, risk_band, overrides, created_at
+        FROM assessments_v2
         ORDER BY created_at DESC
         LIMIT %s
     """, (limit,))

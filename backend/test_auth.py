@@ -14,11 +14,15 @@ import main
 SECRET = "test-secret-that-is-long-enough-for-hs256-signing"
 
 VALID_INPUTS = {
-    "txn_regularity": 85,
-    "utility_payment_score": 90,
-    "avg_monthly_inflow": 42000,
-    "mobile_usage_stability": 80,
-    "social_signal_score": 70,
+    "monthly_income": 42000,
+    "lowest_month_income": 38000,
+    "existing_emi": 3000,
+    "requested_emi": 4000,
+    "bills_on_time": 12,
+    "failed_payments": 0,
+    "avg_balance": 60000,
+    "vehicle": "two_wheeler",
+    "months_in_work": 36,
 }
 
 
@@ -83,7 +87,7 @@ def test_signed_in_user_can_assess_risk(client):
     token = sign_in(client)
     response = client.post("/assess-risk", json=VALID_INPUTS, headers=bearer(token))
     assert response.status_code == 200
-    assert response.json()["final_score"] == pytest.approx(83.8)
+    assert response.json()["final_score"] == pytest.approx(89.26)
     assert response.json()["risk_band"] == "Low Risk"
     assert len(client.saved) == 1  # the assessment was logged
 
@@ -116,9 +120,14 @@ def test_token_signed_with_another_key_is_rejected(client):
 
 def test_validation_still_applies_when_signed_in(client):
     token = sign_in(client)
-    bad = dict(VALID_INPUTS, txn_regularity=150)  # scores are capped at 100
-    response = client.post("/assess-risk", json=bad, headers=bearer(token))
-    assert response.status_code == 422
+    for bad in (
+        dict(VALID_INPUTS, bills_on_time=13),            # only 12 bills are counted
+        dict(VALID_INPUTS, monthly_income=-1),           # income cannot be negative
+        dict(VALID_INPUTS, vehicle="spaceship"),         # not one of the listed vehicles
+        dict(VALID_INPUTS, lowest_month_income=50000),   # lowest month above the average
+    ):
+        response = client.post("/assess-risk", json=bad, headers=bearer(token))
+        assert response.status_code == 422
     assert client.saved == []
 
 
