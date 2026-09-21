@@ -11,12 +11,21 @@ import explain
 import main
 from model import compute_risk_score
 
-STEADY = dict(monthly_income=42000, lowest_month_income=38000, existing_emi=3000, requested_emi=4000,
-              bills_on_time=12, failed_payments=0, avg_balance=60000, vehicle="two_wheeler", months_in_work=36)
-SEASONAL = dict(monthly_income=22000, lowest_month_income=9000, existing_emi=2000, requested_emi=4000,
-                bills_on_time=9, failed_payments=1, avg_balance=15000, vehicle="cycle", months_in_work=18)
-NO_INCOME = dict(monthly_income=0, lowest_month_income=0, existing_emi=0, requested_emi=5000,
-                 bills_on_time=12, failed_payments=0, avg_balance=20000, vehicle="car", months_in_work=30)
+STEADY = dict(monthly_income=42000, lowest_month_income=38000, household_size=4, household_expenses=20000,
+              existing_loan_payments=3000, active_loans=1, loan_amount=60000, tenure_months=12,
+              annual_rate_percent=24, bills_on_time=12, failed_payments=0, avg_balance=60000,
+              months_in_work=36, vehicle="two_wheeler")
+SEASONAL = dict(monthly_income=22000, lowest_month_income=9000, household_size=5, household_expenses=14000,
+                existing_loan_payments=2000, active_loans=1, loan_amount=40000, tenure_months=12,
+                annual_rate_percent=24, bills_on_time=9, failed_payments=1, avg_balance=15000,
+                months_in_work=18, vehicle="cycle")
+NO_INCOME = dict(monthly_income=0, lowest_month_income=0, household_size=4, household_expenses=12000,
+                 existing_loan_payments=0, active_loans=0, loan_amount=30000, tenure_months=12,
+                 annual_rate_percent=24, bills_on_time=12, failed_payments=0, avg_balance=20000,
+                 months_in_work=30, vehicle="car")
+# what the API receives: the same facts plus the audit-only area type
+API_STEADY = dict(STEADY, area_type="urban")
+API_NO_INCOME = dict(NO_INCOME, area_type="rural")
 
 
 def scored(inputs):
@@ -122,26 +131,27 @@ def test_long_replies_are_cut_at_a_sentence_end(with_key, monkeypatch):
 
 def test_prompt_carries_the_score_and_the_numbers_behind_it():
     prompt = explain.build_prompt(scored(STEADY))
-    assert "89.26 out of 100 (Low Risk)" in prompt
-    assert "Debt burden: 20 of 20 points" in prompt
-    assert "Income stability: 18.1 of 20 points" in prompt
-    assert "Loan payments would use 17% of income" in prompt
+    assert "89.48 out of 100 (Low Risk)" in prompt
+    assert "Loan burden: 15 of 15 points" in prompt
+    assert "Income stability: 13.57 of 15 points" in prompt
+    assert "Existing loan payments Rs 3,000 plus the new installment Rs 5,674 is 21% of income" in prompt
+    assert "Rs 13,326 left a month after essentials and loan payments" in prompt
     assert "12 of 12 bills paid on time" in prompt
     assert "already in the top band, Low Risk (the safest band)" in prompt
 
 
 def test_prompt_names_the_strongest_factor_and_the_biggest_shortfall():
     prompt = explain.build_prompt(scored(SEASONAL))
-    # Several factors have a full or near-full share; the first full one is named.
-    assert "Strongest factor (highest share of its maximum): Debt burden, 20 of 20 points (100%)" in prompt
-    # Income stability is furthest from its maximum in points (11.82).
-    assert "Biggest shortfall (most points still available): Income stability, 11.82 points" in prompt
+    # Loan burden earned its full points, the first factor at 100%.
+    assert "Strongest factor (highest share of its maximum): Loan burden, 15 of 15 points (100%)" in prompt
+    # Disposable income is furthest from its maximum in points (10.85).
+    assert "Biggest shortfall (most points still available): Disposable income, 10.85 points" in prompt
 
 
 def test_prompt_states_how_far_the_next_band_is():
     prompt = explain.build_prompt(scored(SEASONAL))
-    assert "60.86 out of 100 (Medium Risk)" in prompt
-    assert "Points needed to reach Low Risk: 9.14" in prompt
+    assert "56.32 out of 100 (Medium Risk)" in prompt
+    assert "Points needed to reach Low Risk: 13.68" in prompt
 
 
 def test_prompt_explains_a_policy_rule_instead_of_a_next_band():
@@ -184,26 +194,26 @@ def signed_in_headers(client):
 
 def test_api_includes_the_ai_explanation_when_available(client, monkeypatch):
     monkeypatch.setattr(main, "generate_explanation", lambda result: "Explained by AI.")
-    response = client.post("/assess-risk", json=STEADY, headers=signed_in_headers(client))
+    response = client.post("/assess-risk", json=API_STEADY, headers=signed_in_headers(client))
     body = response.json()
     assert response.status_code == 200
     assert body["ai_explanation"] == "Explained by AI."
-    assert body["final_score"] == pytest.approx(89.26)
+    assert body["final_score"] == pytest.approx(89.48)
 
 
 def test_api_still_scores_when_the_ai_is_unavailable(client, monkeypatch):
     monkeypatch.setattr(main, "generate_explanation", lambda result: None)
-    response = client.post("/assess-risk", json=STEADY, headers=signed_in_headers(client))
+    response = client.post("/assess-risk", json=API_STEADY, headers=signed_in_headers(client))
     body = response.json()
     assert response.status_code == 200
     assert body["ai_explanation"] is None
-    assert body["final_score"] == pytest.approx(89.26)
+    assert body["final_score"] == pytest.approx(89.48)
     assert body["risk_band"] == "Low Risk"
 
 
 def test_api_returns_the_details_and_any_policy_rule(client, monkeypatch):
     monkeypatch.setattr(main, "generate_explanation", lambda result: None)
-    body = client.post("/assess-risk", json=NO_INCOME, headers=signed_in_headers(client)).json()
+    body = client.post("/assess-risk", json=API_NO_INCOME, headers=signed_in_headers(client)).json()
     assert body["risk_band"] == "High Risk"
     assert body["overrides"] == ["No income in the last 6 months"]
     assert body["details"]["assets"] == "Owns a car"
@@ -212,18 +222,18 @@ def test_api_returns_the_details_and_any_policy_rule(client, monkeypatch):
 def test_the_ai_can_never_change_the_score(client, monkeypatch):
     def try_to_meddle(result):
         result["final_score"] = 5  # a misbehaving explainer
-        result["breakdown"]["debt_burden"] = 0
+        result["breakdown"]["loan_burden"] = 0
         return "text"
 
     saved = []
     monkeypatch.setattr(main, "log_assessment", lambda inputs, result: saved.append(result["final_score"]))
     monkeypatch.setattr(main, "generate_explanation", try_to_meddle)
 
-    response = client.post("/assess-risk", json=STEADY, headers=signed_in_headers(client))
+    response = client.post("/assess-risk", json=API_STEADY, headers=signed_in_headers(client))
     body = response.json()
 
     # The explainer only ever sees a copy, so neither the logged score nor the
     # returned score can be altered by it.
-    assert saved == [pytest.approx(89.26)]
-    assert body["final_score"] == pytest.approx(89.26)
-    assert body["breakdown"]["debt_burden"] == pytest.approx(20)
+    assert saved == [pytest.approx(89.48)]
+    assert body["final_score"] == pytest.approx(89.48)
+    assert body["breakdown"]["loan_burden"] == pytest.approx(15)

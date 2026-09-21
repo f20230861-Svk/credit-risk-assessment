@@ -29,14 +29,16 @@ TIMEOUT_SECONDS = 8
 MAX_CHARS = 700
 
 LABELS = {
-    "debt_burden": "Debt burden",
+    "loan_burden": "Loan burden",
+    "disposable_income": "Disposable income",
     "income_stability": "Income stability",
+    "income_per_person": "Income per person",
     "bills_on_time": "Bills paid on time",
     "failed_payments": "Failed payments",
+    "active_loans": "Active loans",
     "savings_cushion": "Savings cushion",
-    "income_level": "Income level",
-    "assets": "Assets",
     "time_in_work": "Time in work",
+    "assets": "Assets",
 }
 
 

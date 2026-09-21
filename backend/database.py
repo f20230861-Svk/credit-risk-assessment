@@ -72,3 +72,27 @@ def get_recent_assessments(limit: int = 20):
     cur.close()
     conn.close()
     return rows
+
+
+def get_fairness_report():
+    """Outcomes grouped by the type of area, for a fairness audit.
+
+    The area type is stored with every assessment but is never used in the
+    score. This report only checks whether outcomes differ between areas.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            COALESCE(inputs->>'area_type', 'not recorded') AS area_type,
+            COUNT(*) AS assessments,
+            ROUND(AVG(final_score)::numeric, 1)::float AS average_score,
+            ROUND(100.0 * SUM(CASE WHEN risk_band = 'High Risk' THEN 1 ELSE 0 END) / COUNT(*), 0)::float AS high_risk_percent
+        FROM assessments_v2
+        GROUP BY 1
+        ORDER BY 1
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows

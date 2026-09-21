@@ -5,6 +5,7 @@ FastAPI server exposing the credit risk model as an API.
   POST /login        exchange a username and password for a signed token
   POST /assess-risk  score an applicant and log it to Postgres (token required)
   GET  /history      recent assessments (token required)
+  GET  /fairness-report  outcomes by type of area, for auditing (token required)
 
 Secrets are read from environment variables and never written in the code:
   AUTH_USERNAME, AUTH_PASSWORD  the one account allowed to sign in
@@ -28,7 +29,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, model_validator
 
 from model import compute_risk_score
-from database import init_db, log_assessment, get_recent_assessments
+from database import init_db, log_assessment, get_recent_assessments, get_fairness_report
 from explain import generate_explanation
 
 TOKEN_LIFETIME_SECONDS = 12 * 60 * 60  # a signed-in session lasts 12 hours
@@ -57,20 +58,27 @@ def on_startup():
 
 
 Vehicle = Literal["none", "cycle", "two_wheeler", "second_hand_car", "car"]
+AreaType = Literal["urban", "semi_urban", "rural"]
 
 
 class ApplicantData(BaseModel):
-    """The nine facts about a borrower. Money is in rupees."""
+    """Facts about a household and the loan it asks for. Money is in rupees a month unless stated."""
 
     monthly_income: float = Field(..., ge=0, le=10_000_000)
     lowest_month_income: float = Field(..., ge=0, le=10_000_000)
-    existing_emi: float = Field(..., ge=0, le=10_000_000)
-    requested_emi: float = Field(..., ge=0, le=10_000_000)
+    household_size: int = Field(..., ge=1, le=20)
+    household_expenses: float = Field(..., ge=0, le=10_000_000)
+    existing_loan_payments: float = Field(..., ge=0, le=10_000_000)
+    active_loans: int = Field(..., ge=0, le=20)
+    loan_amount: float = Field(..., ge=0, le=10_000_000)
+    tenure_months: int = Field(..., ge=1, le=120)
+    annual_rate_percent: float = Field(..., ge=0, le=60)
     bills_on_time: int = Field(..., ge=0, le=12)
     failed_payments: int = Field(..., ge=0, le=50)
     avg_balance: float = Field(..., ge=0, le=100_000_000)
-    vehicle: Vehicle
     months_in_work: int = Field(..., ge=0, le=600)
+    vehicle: Vehicle
+    area_type: AreaType  # kept for the fairness audit only, never used in the score
 
     @model_validator(mode="after")
     def lowest_month_cannot_beat_the_average(self):
@@ -159,14 +167,20 @@ def health_check():
 @app.post("/assess-risk")
 def assess_risk(data: ApplicantData, user: str = Depends(require_user)):
     inputs = data.model_dump()
+    area_type = inputs.pop("area_type")   # audit only: it never reaches the scorecard
     result = compute_risk_score(**inputs)
-    log_assessment(inputs, result)
+    log_assessment({**inputs, "area_type": area_type}, result)
 
     # The score above is final. The AI explanation is an optional extra: it is
     # None when the AI is off or unavailable, and the app then shows its
     # built-in explanation instead.
     result["ai_explanation"] = generate_explanation(copy.deepcopy(result))
     return result
+
+
+@app.get("/fairness-report")
+def fairness_report(user: str = Depends(require_user)):
+    return get_fairness_report()
 
 
 @app.get("/history")

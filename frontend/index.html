@@ -450,7 +450,7 @@
 
   <header>
     <h1>Score a borrower who has no credit file</h1>
-    <p class="lede">Enter nine facts about the borrower's income, loans and payment record. The score shows how much each factor contributed, so the decision can be explained.</p>
+    <p class="lede">Enter the household's income and costs, its existing loans, its payment record and the loan it asks for. The score shows how much each factor contributed, so the decision can be explained.</p>
   </header>
 
   <section class="signin" id="signin" aria-labelledby="signin-heading" hidden>
@@ -469,7 +469,7 @@
   <div id="app" hidden>
   <div class="layout">
     <section aria-labelledby="form-heading">
-      <h2 id="form-heading" style="font-size:1.5rem;margin-bottom:12px;">Borrower facts</h2>
+      <h2 id="form-heading" style="font-size:1.5rem;margin-bottom:12px;">Household facts</h2>
 
       <div class="presets">
         <span>Try an example:</span>
@@ -477,6 +477,7 @@
         <button type="button" data-preset="seasonal">Seasonal earner</button>
         <button type="button" data-preset="irregular">Irregular earner</button>
         <button type="button" data-preset="noincome">No income, clean record</button>
+        <button type="button" data-preset="toolarge">Steady earner, loan too large</button>
       </div>
 
       <form id="assess-form" novalidate>
@@ -487,7 +488,7 @@
     </section>
 
     <section class="result" id="result" aria-live="polite" aria-label="Assessment result">
-      <p class="placeholder">Enter the borrower's facts and choose Assess risk. The score, its risk band and each factor's contribution will appear here.</p>
+      <p class="placeholder">Enter the borrower's facts and the loan they ask for, then choose Assess risk. The score, its risk band and each factor's contribution will appear here.</p>
     </section>
   </div>
 
@@ -495,6 +496,14 @@
     <h2 id="history-heading">Recent assessments</h2>
     <p class="note">Every assessment is saved to the database, newest first.</p>
     <div class="table-scroll" id="history-body">
+      <p class="empty">Loading…</p>
+    </div>
+  </section>
+
+  <section class="history" aria-labelledby="fairness-heading">
+    <h2 id="fairness-heading">Fairness check</h2>
+    <p class="note">The type of area is saved with every assessment but is never used in the score. This table only checks whether outcomes differ between areas. With a few demo assessments it is illustrative, not evidence.</p>
+    <div class="table-scroll" id="fairness-body">
       <p class="empty">Loading…</p>
     </div>
   </section>
@@ -508,58 +517,89 @@
 
   // Points each factor can contribute. These mirror WEIGHTS in backend/model.py.
   const MAX_POINTS = {
-    debt_burden: 20,
-    income_stability: 20,
-    bills_on_time: 20,
-    failed_payments: 10,
+    loan_burden: 15,
+    disposable_income: 15,
+    income_stability: 15,
+    income_per_person: 5,
+    bills_on_time: 15,
+    failed_payments: 8,
+    active_loans: 7,
     savings_cushion: 10,
-    income_level: 10,
-    assets: 5,
-    time_in_work: 5
+    time_in_work: 5,
+    assets: 5
   };
 
   const LABELS = {
-    debt_burden: "Debt burden",
+    loan_burden: "Loan burden",
+    disposable_income: "Disposable income",
     income_stability: "Income stability",
+    income_per_person: "Income per person",
     bills_on_time: "Bills paid on time",
     failed_payments: "Failed payments",
+    active_loans: "Active loans",
     savings_cushion: "Savings cushion",
-    income_level: "Income level",
-    assets: "Assets",
-    time_in_work: "Time in work"
+    time_in_work: "Time in work",
+    assets: "Assets"
   };
 
-  // type: "money" (rupees), "count" (whole number with a slider) or "select"
+  // type: "money" (rupees), "percent", "count" (whole number with a slider) or "select".
+  // The hint says what to enter, then where the number would come from in a real system.
   const FIELDS = [
-    { group: "Income and loans", key: "monthly_income", label: "Average monthly income", type: "money", value: 30000,
-      hint: "Money received per month, averaged over the last 6 months, in rupees. \u20B950,000 or more earns full income points." },
+    { group: "Household income and costs", key: "monthly_income", label: "Household monthly income", type: "money", value: 30000,
+      hint: "All money the household receives per month, averaged over the last 6 months. Comes from bank statements, shared with consent." },
     { key: "lowest_month_income", label: "Lowest month's income", type: "money", value: 20000,
       hint: "The lowest month's income in the same 6 months. It shows how much income dips." },
-    { key: "existing_emi", label: "Existing loan installments", type: "money", value: 0,
-      hint: "Total monthly installments on loans the borrower already has, in rupees. Enter 0 if none." },
-    { key: "requested_emi", label: "New loan installment", type: "money", value: 5000,
-      hint: "Monthly installment of the loan being requested, in rupees." },
+    { key: "household_size", label: "People in the household", type: "count", min: 1, max: 20, sliderMax: 10, value: 4,
+      hint: "Everyone who shares the household's income, including children and elderly. It sets a minimum for living costs and shows income per person." },
+    { key: "household_expenses", label: "Essential costs a month", type: "money", value: 15000,
+      hint: "Food, rent, school, medical and transport. The lender applies a minimum per person, because people tend to understate expenses." },
+    { key: "area_type", label: "Area", type: "select", value: "urban",
+      options: [["urban", "Urban"], ["semi_urban", "Semi-urban"], ["rural", "Rural"]],
+      hint: "Audit only. This is NOT used in the score. It is saved so that fairness can be checked across urban and rural borrowers." },
+
+    { group: "Existing loans", key: "existing_loan_payments", label: "Existing loan payments", type: "money", value: 3000,
+      hint: "Monthly installments and card dues already being paid, in rupees. Enter 0 if none. Comes from a credit bureau report or bank statement." },
+    { key: "active_loans", label: "Loans being repaid", type: "count", min: 0, max: 20, sliderMax: 8, value: 1,
+      hint: "The number of loans being repaid now, from any lender. Several at once is a warning sign of over-indebtedness. Comes from a credit bureau report." },
+
+    { group: "The loan requested", key: "loan_amount", label: "Loan amount", type: "money", step: 5000, value: 50000,
+      hint: "The amount the household asks for, in rupees. Comes from the loan application." },
+    { key: "tenure_months", label: "Tenure in months", type: "count", min: 1, max: 120, sliderMax: 60, value: 12,
+      hint: "How long the household will take to repay. Comes from the loan application." },
+    { key: "annual_rate_percent", label: "Interest rate a year", type: "percent", value: 24,
+      hint: "The lender's rate for this loan. The app works out the monthly installment from the amount, tenure and rate." },
 
     { group: "Payment record", key: "bills_on_time", label: "Bills paid on time", type: "count", min: 0, max: 12, value: 10,
-      hint: "Utility, rent and phone bills paid on or before the due date, out of the last 12." },
+      hint: "Utility, rent and phone bills paid on or before the due date, out of the last 12. Comes from utility and telecom payment records." },
     { key: "failed_payments", label: "Failed payments", type: "count", min: 0, max: 50, sliderMax: 12, value: 0,
-      hint: "Bounced or failed automatic payments in the last 6 months." },
+      hint: "Bounced or failed automatic payments in the last 6 months. Seen in the bank statement." },
 
     { group: "Cushion and stability", key: "avg_balance", label: "Average month-end balance", type: "money", value: 30000,
-      hint: "Average account balance at month end over the last 6 months, in rupees. Three months of income earns full points." },
+      hint: "Average account balance at month end over the last 6 months. Three months of income earns full points." },
     { key: "months_in_work", label: "Months in current work", type: "count", min: 0, max: 600, sliderMax: 60, value: 18,
-      hint: "Months with the same employer or platform. 24 or more earns full points." },
+      hint: "Months with the same employer or platform. 24 or more earns full points. Comes from an employer or platform record." },
 
     { group: "Assets", key: "vehicle", label: "Vehicle owned", type: "select", value: "none",
       options: [["none", "None"], ["cycle", "Cycle"], ["two_wheeler", "Bike or scooter"], ["second_hand_car", "Second-hand car"], ["car", "Car"]],
-      hint: "The most valuable vehicle owned. If it is still being paid off, count that loan under existing installments." }
+      hint: "The most valuable vehicle owned. If it is still being paid off, count that loan under existing loan payments." }
   ];
 
   const PRESETS = {
-    steady:    { monthly_income: 42000, lowest_month_income: 38000, existing_emi: 3000, requested_emi: 4000, bills_on_time: 12, failed_payments: 0, avg_balance: 60000, vehicle: "two_wheeler", months_in_work: 36 },
-    seasonal:  { monthly_income: 22000, lowest_month_income: 9000,  existing_emi: 2000, requested_emi: 4000, bills_on_time: 9,  failed_payments: 1, avg_balance: 15000, vehicle: "cycle",       months_in_work: 18 },
-    irregular: { monthly_income: 12000, lowest_month_income: 3000,  existing_emi: 3000, requested_emi: 5000, bills_on_time: 4,  failed_payments: 3, avg_balance: 2000,  vehicle: "none",        months_in_work: 5 },
-    noincome:  { monthly_income: 0,     lowest_month_income: 0,     existing_emi: 0,    requested_emi: 5000, bills_on_time: 12, failed_payments: 0, avg_balance: 20000, vehicle: "car",         months_in_work: 30 }
+    steady:    { monthly_income: 42000, lowest_month_income: 38000, household_size: 4, household_expenses: 20000, area_type: "urban",
+                 existing_loan_payments: 3000, active_loans: 1, loan_amount: 60000, tenure_months: 12, annual_rate_percent: 24,
+                 bills_on_time: 12, failed_payments: 0, avg_balance: 60000, months_in_work: 36, vehicle: "two_wheeler" },
+    seasonal:  { monthly_income: 22000, lowest_month_income: 9000, household_size: 5, household_expenses: 14000, area_type: "rural",
+                 existing_loan_payments: 2000, active_loans: 1, loan_amount: 40000, tenure_months: 12, annual_rate_percent: 24,
+                 bills_on_time: 9, failed_payments: 1, avg_balance: 15000, months_in_work: 18, vehicle: "cycle" },
+    irregular: { monthly_income: 12000, lowest_month_income: 3000, household_size: 3, household_expenses: 8000, area_type: "semi_urban",
+                 existing_loan_payments: 1000, active_loans: 1, loan_amount: 20000, tenure_months: 12, annual_rate_percent: 24,
+                 bills_on_time: 4, failed_payments: 3, avg_balance: 2000, months_in_work: 5, vehicle: "none" },
+    noincome:  { monthly_income: 0, lowest_month_income: 0, household_size: 4, household_expenses: 12000, area_type: "urban",
+                 existing_loan_payments: 0, active_loans: 0, loan_amount: 30000, tenure_months: 12, annual_rate_percent: 24,
+                 bills_on_time: 12, failed_payments: 0, avg_balance: 20000, months_in_work: 30, vehicle: "car" },
+    toolarge:  { monthly_income: 42000, lowest_month_income: 38000, household_size: 4, household_expenses: 20000, area_type: "urban",
+                 existing_loan_payments: 3000, active_loans: 1, loan_amount: 300000, tenure_months: 12, annual_rate_percent: 24,
+                 bills_on_time: 12, failed_payments: 0, avg_balance: 60000, months_in_work: 36, vehicle: "two_wheeler" }
   };
 
   const fieldsEl = document.getElementById("fields");
@@ -568,6 +608,7 @@
   const statusEl = document.getElementById("status");
   const resultEl = document.getElementById("result");
   const historyEl = document.getElementById("history-body");
+  const fairnessEl = document.getElementById("fairness-body");
 
   /* ---------- build the form ---------- */
 
@@ -592,7 +633,10 @@
         }).join("") + "</select>";
     } else if (f.type === "money") {
       control = '<span aria-hidden="true">\u20B9</span><input id="' + id + '" class="money" name="' + f.key +
-        '" type="number" inputmode="decimal" min="0" step="500" value="' + f.value + '" aria-describedby="' + id + '-hint">';
+        '" type="number" inputmode="decimal" min="0" step="' + (f.step || 500) + '" value="' + f.value + '" aria-describedby="' + id + '-hint">';
+    } else if (f.type === "percent") {
+      control = '<input id="' + id + '" name="' + f.key + '" type="number" inputmode="decimal" min="0" max="60" step="0.5" value="' +
+        f.value + '" aria-describedby="' + id + '-hint"><span aria-hidden="true">%</span>';
     } else {
       control = '<input id="' + id + '" name="' + f.key + '" type="number" inputmode="numeric" min="' + f.min +
         '" max="' + f.max + '" step="1" value="' + f.value + '" aria-describedby="' + id + '-hint">';
@@ -645,6 +689,7 @@
       let v = parseFloat(el.value);
       if (Number.isNaN(v)) v = 0;
       if (f.type === "count") v = Math.min(f.max, Math.max(f.min, Math.round(v)));
+      else if (f.type === "percent") v = Math.min(60, Math.max(0, v));
       else v = Math.max(0, v);
       out[f.key] = v;
     });
@@ -875,7 +920,7 @@
       setToken(data.access_token);
       document.getElementById("password").value = "";
       showApp();
-      loadHistory();
+      refreshTables();
     } catch (err) {
       signinStatus.className = "status error";
       signinStatus.textContent = (err instanceof TypeError)
@@ -926,6 +971,46 @@
     }
   }
 
+  /* ---------- fairness check ---------- */
+
+  const AREA_NAMES = { urban: "Urban", semi_urban: "Semi-urban", rural: "Rural" };
+
+  async function loadFairness() {
+    try {
+      const res = await authFetch("/fairness-report");
+      if (!res.ok) throw new Error("status " + res.status);
+      const rows = await res.json();
+
+      if (!rows.length) {
+        fairnessEl.innerHTML = '<p class="empty">Nothing to compare yet. Run a few assessments in different areas.</p>';
+        return;
+      }
+
+      const body = rows.map(function (r) {
+        return '<tr>' +
+          '<td>' + esc(AREA_NAMES[r.area_type] || r.area_type) + '</td>' +
+          '<td class="num">' + r.assessments + '</td>' +
+          '<td class="num">' + fmt(r.average_score) + '</td>' +
+          '<td class="num">' + fmt(r.high_risk_percent) + '%</td>' +
+        '</tr>';
+      }).join("");
+
+      fairnessEl.innerHTML =
+        '<table>' +
+          '<thead><tr><th>Area</th><th class="num">Assessments</th><th class="num">Average score</th><th class="num">Share rated High Risk</th></tr></thead>' +
+          '<tbody>' + body + '</tbody>' +
+        '</table>';
+    } catch (err) {
+      if (err instanceof SessionEnded) return;
+      fairnessEl.innerHTML = '<p class="empty">Could not load the fairness check.</p>';
+    }
+  }
+
+  function refreshTables() {
+    loadHistory();
+    loadFairness();
+  }
+
   /* ---------- submit ---------- */
 
   let slowTimer = null;
@@ -960,7 +1045,7 @@
       const data = await res.json();
       renderResult(data);
       statusEl.textContent = "";
-      loadHistory();
+      refreshTables();
     } catch (err) {
       if (err instanceof SessionEnded) {
         statusEl.textContent = "";
@@ -978,7 +1063,7 @@
 
   if (getToken()) {
     showApp();
-    loadHistory();
+    refreshTables();
   } else {
     showSignin("");
   }

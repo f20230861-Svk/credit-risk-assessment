@@ -16,13 +16,19 @@ SECRET = "test-secret-that-is-long-enough-for-hs256-signing"
 VALID_INPUTS = {
     "monthly_income": 42000,
     "lowest_month_income": 38000,
-    "existing_emi": 3000,
-    "requested_emi": 4000,
+    "household_size": 4,
+    "household_expenses": 20000,
+    "existing_loan_payments": 3000,
+    "active_loans": 1,
+    "loan_amount": 60000,
+    "tenure_months": 12,
+    "annual_rate_percent": 24,
     "bills_on_time": 12,
     "failed_payments": 0,
     "avg_balance": 60000,
-    "vehicle": "two_wheeler",
     "months_in_work": 36,
+    "vehicle": "two_wheeler",
+    "area_type": "urban",
 }
 
 
@@ -87,7 +93,7 @@ def test_signed_in_user_can_assess_risk(client):
     token = sign_in(client)
     response = client.post("/assess-risk", json=VALID_INPUTS, headers=bearer(token))
     assert response.status_code == 200
-    assert response.json()["final_score"] == pytest.approx(89.26)
+    assert response.json()["final_score"] == pytest.approx(89.48)
     assert response.json()["risk_band"] == "Low Risk"
     assert len(client.saved) == 1  # the assessment was logged
 
@@ -125,6 +131,10 @@ def test_validation_still_applies_when_signed_in(client):
         dict(VALID_INPUTS, monthly_income=-1),           # income cannot be negative
         dict(VALID_INPUTS, vehicle="spaceship"),         # not one of the listed vehicles
         dict(VALID_INPUTS, lowest_month_income=50000),   # lowest month above the average
+        dict(VALID_INPUTS, tenure_months=0),             # a loan needs at least one month
+        dict(VALID_INPUTS, household_size=0),            # a household has at least one person
+        dict(VALID_INPUTS, area_type="moon"),             # not one of the listed area types
+        dict(VALID_INPUTS, annual_rate_percent=200),     # not a believable interest rate
     ):
         response = client.post("/assess-risk", json=bad, headers=bearer(token))
         assert response.status_code == 422
