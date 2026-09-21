@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credit risk assessment for borrowers without a credit file</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Schibsted+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F2F4F3;
+    --panel: #FFFFFF;
+    --ink: #1B2A41;
+    --ink-soft: #4A5A72;
+    --line: #D5DBE2;
+    --on-navy: #EAF0F7;
+    --on-navy-soft: #A9B7CB;
+    --low: #5FD39A;
+    --med: #F2B84B;
+    --high: #F27C6B;
+    --bar: #8FB0FF;
+    --focus: #2F5BFF;
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --sans: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 24px 72px;
+  }
+
+  h1, h2 {
+    font-family: var(--serif);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 4.4vw, 3rem);
+    line-height: 1.1;
+    max-width: 18ch;
+  }
+
+  .lede {
+    margin: 16px 0 0;
+    max-width: 56ch;
+    color: var(--ink-soft);
+    font-size: 1.05rem;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 48px;
+    margin-top: 40px;
+    align-items: start;
+  }
+
+  /* ---------- form ---------- */
+
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+  }
+
+  .presets button {
+    font: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--ink-soft);
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+
+  .presets button:hover { background: var(--ink); color: #fff; }
+
+  .field {
+    padding: 18px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .field:last-of-type { border-bottom: 1px solid var(--line); }
+
+  .field-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .field label {
+    font-weight: 600;
+  }
+
+  .hint {
+    margin: 4px 0 10px;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    max-width: 46ch;
+  }
+
+  .num-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--ink-soft);
+  }
+
+  .num-wrap input {
+    font: inherit;
+    font-variant-numeric: normal;
+    color: var(--ink);
+    width: 5.5rem;
+    text-align: right;
+    padding: 6px 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
+  .num-wrap input.money { width: 7.5rem; }
+
+  .slider {
+    width: 100%;
+    accent-color: var(--ink);
+    margin: 0;
+  }
+
+  .submit {
+    margin-top: 24px;
+    width: 100%;
+    font: inherit;
+    font-weight: 600;
+    color: #fff;
+    background: var(--ink);
+    border: 0;
+    border-radius: 4px;
+    padding: 14px 20px;
+    cursor: pointer;
+  }
+
+  .submit:disabled { opacity: 0.7; cursor: progress; }
+
+  .status {
+    min-height: 1.5em;
+    margin: 12px 0 0;
+    color: var(--ink-soft);
+    font-size: 0.92rem;
+  }
+
+  .status.error { color: #B3261E; }
+
+  /* ---------- result ---------- */
+
+  .result {
+    background: var(--ink);
+    color: var(--on-navy);
+    border-radius: 8px;
+    padding: 28px;
+    position: sticky;
+    top: 24px;
+  }
+
+  .placeholder {
+    margin: 0;
+    color: var(--on-navy-soft);
+    max-width: 38ch;
+  }
+
+  .score-line {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+
+  .score {
+    font-family: var(--serif);
+    font-size: 4.5rem;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: normal;
+  }
+
+  .outof { color: var(--on-navy-soft); }
+
+  .band {
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: var(--ink);
+  }
+
+  .band.low  { background: var(--low); }
+  .band.med  { background: var(--med); }
+  .band.high { background: var(--high); }
+
+  .meter-wrap {
+    position: relative;
+    margin: 28px 0 8px;
+    padding-bottom: 22px;
+  }
+
+  .zones {
+    display: flex;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    gap: 2px;
+  }
+
+  .zones span { display: block; opacity: 0.85; }
+  .z-high { background: var(--high); }
+  .z-med  { background: var(--med); }
+  .z-low  { background: var(--low); }
+
+  .marker {
+    position: absolute;
+    top: -6px;
+    width: 4px;
+    height: 22px;
+    margin-left: -2px;
+    background: #fff;
+    border-radius: 2px;
+    transition: left 0.5s ease;
+  }
+
+  .tick {
+    position: absolute;
+    bottom: 0;
+    transform: translateX(-50%);
+    font-size: 0.8rem;
+    color: var(--on-navy-soft);
+    font-variant-numeric: normal;
+  }
+
+  .breakdown-title {
+    font-family: var(--serif);
+    font-size: 1.25rem;
+    margin: 24px 0 4px;
+  }
+
+  .rows { list-style: none; margin: 0; padding: 0; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+    padding: 10px 0;
+    border-top: 1px solid rgba(255,255,255,0.14);
+  }
+
+  .row-points {
+    font-variant-numeric: normal;
+    color: var(--on-navy-soft);
+  }
+
+  .bar {
+    grid-column: 1 / -1;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.14);
+    overflow: hidden;
+  }
+
+  .bar i {
+    display: block;
+    height: 100%;
+    background: var(--bar);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+
+  .reading {
+    margin: 20px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.14);
+    max-width: 52ch;
+  }
+
+  /* ---------- history ---------- */
+
+  .history { margin-top: 64px; }
+
+  .history h2 { font-size: 1.75rem; }
+
+  .history p.note {
+    margin: 6px 0 16px;
+    color: var(--ink-soft);
+  }
+
+  .table-scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: normal;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 12px 10px 0;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  th { font-weight: 600; color: var(--ink-soft); }
+
+  td.num, th.num { text-align: right; padding-right: 24px; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .pill.low  { background: var(--low); }
+  .pill.med  { background: var(--med); }
+  .pill.high { background: var(--high); }
+
+  .empty { color: var(--ink-soft); padding: 16px 0; }
+
+  /* ---------- small screens ---------- */
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; gap: 32px; }
+    .result { position: static; }
+    .page { padding-top: 32px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marker, .bar i { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Score a borrower who has no credit file</h1>
+    <p class="lede">Enter five signals from everyday financial life. The score shows how much each signal contributed, so the decision can be explained.</p>
+  </header>
+
+  <div class="layout">
+    <section aria-labelledby="form-heading">
+      <h2 id="form-heading" style="font-size:1.5rem;margin-bottom:12px;">Borrower signals</h2>
+
+      <div class="presets">
+        <span>Try an example:</span>
+        <button type="button" data-preset="steady">Steady earner</button>
+        <button type="button" data-preset="seasonal">Seasonal earner</button>
+        <button type="button" data-preset="irregular">Irregular earner</button>
+      </div>
+
+      <form id="assess-form" novalidate>
+        <div id="fields"></div>
+        <button class="submit" id="submit-btn" type="submit">Assess risk</button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="result" id="result" aria-live="polite" aria-label="Assessment result">
+      <p class="placeholder">Enter the five signals and choose Assess risk. The score, its risk band and each signal's contribution will appear here.</p>
+    </section>
+  </div>
+
+  <section class="history" aria-labelledby="history-heading">
+    <h2 id="history-heading">Recent assessments</h2>
+    <p class="note">Every assessment is saved to the database, newest first.</p>
+    <div class="table-scroll" id="history-body">
+      <p class="empty">Loading…</p>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Change this to your Render URL after the backend is deployed,
+  // for example "https://credit-risk-api.onrender.com" (no trailing slash).
+  const API_URL = "http://127.0.0.1:8000";
+
+  // Points each signal can contribute. These mirror WEIGHTS in backend/model.py.
+  const MAX_POINTS = {
+    txn_regularity: 30,
+    utility_payment_score: 25,
+    income_score: 20,
+    mobile_usage_stability: 15,
+    social_signal_score: 10
+  };
+
+  const LABELS = {
+    txn_regularity: "Transaction regularity",
+    utility_payment_score: "Utility bill payments",
+    income_score: "Monthly income",
+    mobile_usage_stability: "Mobile usage stability",
+    social_signal_score: "Social signal"
+  };
+
+  const FIELDS = [
+    { key: "txn_regularity", label: LABELS.txn_regularity, type: "score", value: 70,
+      hint: "How steadily money moves through the account. 0 is erratic, 100 is very steady." },
+    { key: "utility_payment_score", label: LABELS.utility_payment_score, type: "score", value: 70,
+      hint: "How reliably electricity, water, gas and phone bills are paid on time." },
+    { key: "avg_monthly_inflow", label: "Average monthly income", type: "money", value: 25000,
+      hint: "Money received per month, in rupees. \u20B950,000 or more earns full income points." },
+    { key: "mobile_usage_stability", label: LABELS.mobile_usage_stability, type: "score", value: 70,
+      hint: "How consistent recharge and usage patterns are over time." },
+    { key: "social_signal_score", label: LABELS.social_signal_score, type: "score", value: 70,
+      hint: "Score from community and network signals, 0 to 100." }
+  ];
+
+  const PRESETS = {
+    steady:    { txn_regularity: 85, utility_payment_score: 90, avg_monthly_inflow: 42000, mobile_usage_stability: 80, social_signal_score: 70 },
+    seasonal:  { txn_regularity: 55, utility_payment_score: 60, avg_monthly_inflow: 22000, mobile_usage_stability: 60, social_signal_score: 50 },
+    irregular: { txn_regularity: 30, utility_payment_score: 35, avg_monthly_inflow: 9000,  mobile_usage_stability: 40, social_signal_score: 30 }
+  };
+
+  const fieldsEl = document.getElementById("fields");
+  const formEl = document.getElementById("assess-form");
+  const submitBtn = document.getElementById("submit-btn");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  const historyEl = document.getElementById("history-body");
+
+  /* ---------- build the form ---------- */
+
+  FIELDS.forEach(function (f) {
+    const id = "in-" + f.key;
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+
+    const isScore = f.type === "score";
+    const numAttrs = isScore ? 'min="0" max="100" step="1"' : 'min="0" step="500"';
+
+    wrap.innerHTML =
+      '<div class="field-head">' +
+        '<label for="' + id + '">' + f.label + '</label>' +
+        '<span class="num-wrap">' + (isScore ? '' : '<span aria-hidden="true">\u20B9</span>') +
+          '<input id="' + id + '" class="' + (isScore ? '' : 'money') + '" name="' + f.key + '" type="number" inputmode="decimal" ' +
+          numAttrs + ' value="' + f.value + '" aria-describedby="' + id + '-hint"></span>' +
+      '</div>' +
+      '<p class="hint" id="' + id + '-hint">' + f.hint + '</p>' +
+      (isScore ? '<input class="slider" type="range" min="0" max="100" step="1" value="' + f.value +
+        '" data-for="' + id + '" aria-label="' + f.label + ' slider">' : '');
+
+    fieldsEl.appendChild(wrap);
+  });
+
+  // Keep each slider and its number box in step.
+  fieldsEl.addEventListener("input", function (e) {
+    const t = e.target;
+    if (t.classList.contains("slider")) {
+      document.getElementById(t.dataset.for).value = t.value;
+    } else if (t.type === "number") {
+      const s = fieldsEl.querySelector('.slider[data-for="' + t.id + '"]');
+      if (s) s.value = t.value;
+    }
+  });
+
+  function setInputs(values) {
+    FIELDS.forEach(function (f) {
+      const el = document.getElementById("in-" + f.key);
+      el.value = values[f.key];
+      const s = fieldsEl.querySelector('.slider[data-for="' + el.id + '"]');
+      if (s) s.value = values[f.key];
+    });
+  }
+
+  function readInputs() {
+    const out = {};
+    FIELDS.forEach(function (f) {
+      const el = document.getElementById("in-" + f.key);
+      let v = parseFloat(el.value);
+      if (Number.isNaN(v)) v = 0;
+      v = f.type === "score" ? Math.min(100, Math.max(0, v)) : Math.max(0, v);
+      out[f.key] = v;
+    });
+    setInputs(out); // show exactly what is being sent
+    return out;
+  }
+
+  document.querySelectorAll("[data-preset]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      setInputs(PRESETS[btn.dataset.preset]);
+    });
+  });
+
+  /* ---------- helpers ---------- */
+
+  function fmt(n) {
+    return String(Number(Number(n).toFixed(2)));
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function bandClass(band) {
+    if (band.indexOf("Low") === 0) return "low";
+    if (band.indexOf("Medium") === 0) return "med";
+    return "high";
+  }
+
+  function fmtTime(ts) {
+    let s = String(ts).replace(/(\.\d{3})\d*/, "$1");
+    if (!/[zZ]|[+-]\d\d:\d\d$/.test(s)) s += "Z"; // database time is UTC
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return ts;
+    return d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  }
+
+  /* ---------- result ---------- */
+
+  function readingText(data) {
+    const keys = Object.keys(MAX_POINTS);
+    const rows = keys.map(function (k) {
+      const earned = data.breakdown[k];
+      return { k: k, earned: earned, max: MAX_POINTS[k], gap: MAX_POINTS[k] - earned };
+    });
+
+    const strongest = rows.slice().sort(function (a, b) {
+      return (b.earned / b.max) - (a.earned / a.max);
+    })[0];
+    const mostRoom = rows.slice().sort(function (a, b) { return b.gap - a.gap; })[0];
+
+    let text = "Strongest signal: " + LABELS[strongest.k] + ", " + fmt(strongest.earned) +
+      " of " + strongest.max + " points. ";
+
+    const score = data.final_score;
+    let next = null;
+    if (score < 40) next = { at: 40, name: "Medium Risk" };
+    else if (score < 70) next = { at: 70, name: "Low Risk" };
+
+    if (next) {
+      text += fmt(next.at - score) + " more points would move this borrower to " + next.name +
+        ". The most room to improve is " + LABELS[mostRoom.k] + ", with " + fmt(mostRoom.gap) +
+        " points still available.";
+    } else {
+      text += "This borrower is already in the Low Risk band.";
+    }
+    return text;
+  }
+
+  function renderResult(data) {
+    const score = data.final_score;
+    const cls = bandClass(data.risk_band);
+    const pos = Math.min(100, Math.max(0, score));
+
+    const rowsHtml = Object.keys(MAX_POINTS).map(function (k) {
+      const earned = data.breakdown[k];
+      const pct = Math.min(100, Math.max(0, (earned / MAX_POINTS[k]) * 100));
+      return '<li class="row">' +
+        '<span>' + LABELS[k] + '</span>' +
+        '<span class="row-points">' + fmt(earned) + ' of ' + MAX_POINTS[k] + '</span>' +
+        '<span class="bar"><i style="width:' + pct + '%"></i></span>' +
+      '</li>';
+    }).join("");
+
+    resultEl.innerHTML =
+      '<div class="score-line">' +
+        '<span class="score">' + fmt(score) + '</span>' +
+        '<span class="outof">out of 100</span>' +
+        '<span class="band ' + cls + '">' + esc(data.risk_band) + '</span>' +
+      '</div>' +
+      '<div class="meter-wrap" role="img" aria-label="Score ' + fmt(score) +
+        ' on a scale of 0 to 100. High risk below 40, medium risk 40 to 70, low risk 70 and above.">' +
+        '<div class="zones">' +
+          '<span class="z-high" style="flex:40"></span>' +
+          '<span class="z-med" style="flex:30"></span>' +
+          '<span class="z-low" style="flex:30"></span>' +
+        '</div>' +
+        '<div class="marker" style="left:' + pos + '%"></div>' +
+        '<span class="tick" style="left:40%">40</span>' +
+        '<span class="tick" style="left:70%">70</span>' +
+      '</div>' +
+      '<h2 class="breakdown-title">How the score adds up</h2>' +
+      '<ul class="rows">' + rowsHtml + '</ul>' +
+      '<p class="reading">' + esc(readingText(data)) + '</p>';
+  }
+
+  /* ---------- history ---------- */
+
+  async function loadHistory() {
+    try {
+      const res = await fetch(API_URL + "/history?limit=10");
+      if (!res.ok) throw new Error("status " + res.status);
+      const rows = await res.json();
+
+      if (!rows.length) {
+        historyEl.innerHTML = '<p class="empty">No assessments yet. Run one above and it will appear here.</p>';
+        return;
+      }
+
+      const body = rows.map(function (r) {
+        return '<tr>' +
+          '<td>' + esc(fmtTime(r.created_at)) + '</td>' +
+          '<td class="num">' + fmt(r.final_score) + '</td>' +
+          '<td><span class="pill ' + bandClass(r.risk_band) + '">' + esc(r.risk_band) + '</span></td>' +
+          '<td class="num">\u20B9' + Number(r.avg_monthly_inflow).toLocaleString("en-IN") + '</td>' +
+        '</tr>';
+      }).join("");
+
+      historyEl.innerHTML =
+        '<table>' +
+          '<thead><tr><th>When</th><th class="num">Score</th><th>Risk band</th><th class="num">Monthly income</th></tr></thead>' +
+          '<tbody>' + body + '</tbody>' +
+        '</table>';
+    } catch (err) {
+      historyEl.innerHTML = '<p class="empty">Could not load history. Check that the backend is running.</p>';
+    }
+  }
+
+  /* ---------- submit ---------- */
+
+  let slowTimer = null;
+
+  function setBusy(busy) {
+    submitBtn.disabled = busy;
+    submitBtn.textContent = busy ? "Assessing\u2026" : "Assess risk";
+    clearTimeout(slowTimer);
+    if (busy) {
+      statusEl.className = "status";
+      statusEl.textContent = "";
+      slowTimer = setTimeout(function () {
+        statusEl.textContent = "Still waiting. A free-tier server can take up to a minute to wake up.";
+      }, 4000);
+    }
+  }
+
+  formEl.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const payload = readInputs();
+    setBusy(true);
+
+    try {
+      const res = await fetch(API_URL + "/assess-risk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("The server answered with status " + res.status + ".");
+      const data = await res.json();
+      renderResult(data);
+      statusEl.textContent = "";
+      loadHistory();
+    } catch (err) {
+      statusEl.className = "status error";
+      statusEl.textContent = "Could not get a score from " + API_URL + ". Check that the backend is running, then try again.";
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  loadHistory();
+</script>
+</body>
+</html>
